@@ -70,10 +70,46 @@ class ActionModule(ActionBase):
         status_params = {'cmnd' : command }
 
         # execute command
-        status_response = requests.get(url = endpoint_uri, params = status_params)
-        # get response data
-        data = status_response.json()
-        display.v("data: %s" % (data))
+      
+        try:
+            status_response = requests.get(url = endpoint_uri, params = status_params, timeout=(5,5))
+            status_response.raise_for_status()
+            # get response data
+            data = status_response.json()
+            display.v("data: %s" % (data))
+
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as err:
+            data = repr(err)
+            unreachable = True
+            failed = False
+        except Exception as err:
+            data = repr(err)
+            failed = True
+            unreachable = True
+        else:
+            unreachable = False
+
+            # avoid upper/lower case confusion
+            if len(data) != 1 or list(data)[0].lower() != command.lower():
+                failed = True
+            else:
+                failed = False
+
+        if failed or unreachable:
+            result["changed"] = False
+            result["failed"] = failed
+            result["unreachable"] = unreachable
+            result["command"] = command
+            result["tasmota_host"] = tasmota_host
+            result["raw_data"] = data
+            result["endpoint_uri"] = endpoint_uri
+            result["incoming_value"] = incoming_value
+            result["existing_value"] = "unknown"
+            return result
+
+        # normalize command casing to what tasmota returned
+        command = list(data)[0]
+
         existing_value = unicode(data.get(command))
 
         if (command.startswith('Rule')):
@@ -98,15 +134,32 @@ class ActionModule(ActionBase):
 
         display.v("[%s] command: %s, existing_value: '%s', incoming_value: '%s'" % (tasmota_host, command, existing_value, incoming_value))
 
-
-
         display.v("[%s] existing_uri: %s" % (tasmota_host, endpoint_uri))
         if existing_value != incoming_value:
-            changed = True
             change_params = { 'cmnd' : ("%s %s" % (command, incoming_value)) }
-            change_response = requests.get(url = endpoint_uri, params = change_params)
+            try:
+                change_response = requests.get(url = endpoint_uri, params = change_params)
+                data = status_response.json()
+                display.v("Modified data: %s" % (data))
+            except Exception as e:
+                data = expr(e)
+                failed = True
+                changed = False
+            else:
+                if (len(data) != 1) or \
+                        (list(data)[0].lower() != command.lower()) or \
+                        (incoming_value != unicode(data.get(command))):
+                    changed = False
+                    failed = True
+                else:
+                    changed = True
+                    failed = False
+        else:
+            changed = False
+            Failed = False
 
         result["changed"] = changed
+        result["failed"] = failed
         result["command"] = command
         result["tasmota_host"] = tasmota_host
         result["raw_data"] = data
