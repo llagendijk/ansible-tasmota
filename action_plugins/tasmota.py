@@ -152,7 +152,7 @@ class ActionModule(ActionBase):
             change_params.update( { 'cmnd' : ("%s %s" % (command, incoming_value)) } )
             try:
                 change_response = requests.get(url = endpoint_uri, params = change_params)
-                data = status_response.json()
+                data = change_response.json()
                 display.v("Modified data: %s" % (data))
             except Exception as e:
                 data = expr(e)
